@@ -8,7 +8,7 @@
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}",
+      "program": "${workspaceFolder}/filereader.go",
       "env": {},
       "args": ["../SAP-2_System/asm_test_files/test_jz_expect_12_v2.asm"]
     }

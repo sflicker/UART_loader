@@ -12,24 +12,8 @@ import (
 	"github.com/jacobsa/go-serial/serial"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Please provide a filename")
-		os.Exit(1)
-	}
-
-	filename := os.Args[1]
-
-	file, err := os.Open(filename)
-	if err != nil {
-		fmt.Printf("Error opening file %s: %v\n", filename, err)
-		os.Exit(1)
-	}
-	defer file.Close()
-
+func loadProgramBytes(file *os.File, programBytes []byte, filename string) ([]byte, bool) {
 	scanner := bufio.NewScanner(file)
-
-	var programBytes []byte
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -67,30 +51,48 @@ func main() {
 			}
 			programBytes = append(programBytes, byte(byteValue))
 		}
-
-		index := strings.IndexFunc(line, func(r rune) bool {
-			return r == ' ' || r == '\t'
-		})
-
-		if index != -1 {
-			binaryStr := line[:index]
-			b, err := strconv.ParseUint(binaryStr, 2, 8)
-			if err != nil {
-				fmt.Printf("Error converting binary to byte: %v\n", err)
-				continue
-			}
-			programBytes = append(programBytes, byte(b))
-		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		fmt.Printf("Error reading from file %s: %v\n", filename, err)
 	}
+	return programBytes, true
+}
 
-	fmt.Println("Program Bytes is %d bytes long\n", len(programBytes))
+func main() {
+
+	READY_CMD := "READY\r\n"
+	LOAD_CMD := "LOAD\r\n"
+	RESET_CMD := "RESET\r\n"
+
+	if len(os.Args) < 2 {
+		fmt.Println("Please provide a filename")
+		os.Exit(1)
+	}
+
+	filename := os.Args[1]
+
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Printf("Error opening file %s: %v\n", filename, err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	var programBytes []byte
+
+	programBytes, success := loadProgramBytes(file, programBytes, filename)
+	if success {
+		fmt.Println("Program bytes loaded successfully")
+	} else {
+		fmt.Println("Failed to load program bytes")
+		os.Exit(1)
+	}
+
+	fmt.Println("Program Bytes is %v bytes long\n", len(programBytes))
 	fmt.Println("Bytes from the first column:")
 	for _, b := range programBytes {
-		fmt.Printf("%08b\n", b)
+		fmt.Printf("%02X\n", b)
 	}
 
 	options := serial.OpenOptions{
@@ -108,13 +110,16 @@ func main() {
 	}
 	defer port.Close()
 
-	loadBytes := []byte("LOAD")
+	fmt.Println("Sending LOAD command")
+	loadBytes := []byte(LOAD_CMD)
+	fmt.Printf("Load Command is %v bytes long\n", len(loadBytes))
 	for _, b := range loadBytes {
 		fmt.Printf("%02X ", b)
 	}
 	fmt.Println()
 
 	for _, b := range loadBytes {
+		fmt.Printf("Sending %02X\n", b)
 		_, err = port.Write([]byte{b})
 		if err != nil {
 			fmt.Printf("Error write byte to serial port: %v\n", err)
@@ -129,7 +134,7 @@ func main() {
 	// 	return
 	// }
 
-	response := make([]byte, 5)
+	response := make([]byte, 7)
 	_, err = port.Read(response)
 	if err != nil {
 		if err != io.EOF {
@@ -138,7 +143,7 @@ func main() {
 		}
 	}
 
-	if string(response) != "READY" {
+	if string(response) != READY_CMD {
 		fmt.Printf("Did not receive 'READY' response; received:", string(response))
 	}
 
@@ -156,6 +161,7 @@ func main() {
 
 	for _, b := range messageLengthLE {
 		checksumCalculated ^= b
+		fmt.Printf("Sending %02X\n", b)
 		_, err = port.Write([]byte{b})
 		if err != nil {
 			fmt.Printf("Error write byte to serial port: %v\n", err)
@@ -174,6 +180,7 @@ func main() {
 	fmt.Printf("Sending Starting Address")
 	for _, b := range startAddressLE {
 		checksumCalculated ^= b
+		fmt.Printf("Sending %02X\n", b)
 		_, err = port.Write([]byte{b})
 		if err != nil {
 			fmt.Printf("Error write byte to serial port: %v\n", err)
@@ -190,6 +197,7 @@ func main() {
 
 	for _, b := range programBytes {
 		checksumCalculated ^= b
+		fmt.Printf("Sending %02X\n", b)
 		_, err = port.Write([]byte{b})
 		if err != nil {
 			fmt.Printf("Error write byte to serial port: %v\n", err)
@@ -211,6 +219,47 @@ func main() {
 
 	fmt.Println()
 	fmt.Printf("Received checksum: %02X\n", checksumReceived[0])
+
+	resetBytes := []byte(RESET_CMD)
+	for _, b := range resetBytes {
+		fmt.Printf("%02X ", b)
+	}
+	fmt.Println()
+
+	for _, b := range resetBytes {
+		fmt.Printf("Sending %02X\n", b)
+		_, err = port.Write([]byte{b})
+		if err != nil {
+			fmt.Printf("Error write byte to serial port: %v\n", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	programResults := make([]byte, 2)
+	_, err = port.Read(programResults)
+	if err != nil {
+		if err != io.EOF {
+			fmt.Printf("Error reading from serial port: %v\n", err)
+			return
+		}
+	}
+
+	fmt.Printf("Result-1: %02X\n", programResults[0])
+	fmt.Printf("Result-2: %02X\n", programResults[1])
+
+	readyResponse := make([]byte, 7)
+	_, err = port.Read(readyResponse)
+	if err != nil {
+		if err != io.EOF {
+			fmt.Printf("Error reading from serial port: %v\n", err)
+			return
+		}
+	}
+
+	if string(readyResponse) != READY_CMD {
+		fmt.Printf("Did not receive 'READY' response; received:", string(readyResponse))
+	}
+
 	fmt.Println("Data Transmission complete.")
 
 }
