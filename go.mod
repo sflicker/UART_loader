@@ -1,4 +1,4 @@
-module serial_project
+module fileloader
 
 go 1.18
 

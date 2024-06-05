@@ -5,12 +5,33 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jacobsa/go-serial/serial"
 )
+
+func parseExpectedResults(filename string) ([]byte, error) {
+	re := regexp.MustCompile(`expect_([0-9A-Fa-f_]+)`)
+	matches := re.FindStringSubmatch(filename)
+	if len(matches) < 1 {
+		return nil, fmt.Errorf("expected result not found in filename: %s", filename)
+	}
+	expectedHexStrings := strings.Split(matches[1], "_")
+	expectedResults := make([]byte, len(expectedHexStrings))
+
+	for i, hexStr := range expectedHexStrings {
+		value, err := strconv.ParseUint(hexStr, 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex value in filename: %s", hexStr)
+		}
+		expectedResults[i] = byte(value)
+	}
+
+	return expectedResults, nil
+}
 
 func loadProgramBytes(file *os.File, programBytes []byte, filename string) ([]byte, bool) {
 	scanner := bufio.NewScanner(file)
@@ -71,6 +92,14 @@ func main() {
 	}
 
 	filename := os.Args[1]
+
+	expectedResults, err := parseExpectedResults(filename)
+	if err != nil {
+		fmt.Println("Error parsing expected results:", err)
+		os.Exit(-1)
+	}
+
+	fmt.Printf("expectedResults: %v", expectedResults)
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -246,6 +275,10 @@ func main() {
 
 	fmt.Printf("Result-1: %02X\n", programResults[0])
 	fmt.Printf("Result-2: %02X\n", programResults[1])
+
+	if programResults[0] == expectedResults[0] {
+		fmt.Println("test passed")
+	}
 
 	readyResponse := make([]byte, 7)
 	_, err = port.Read(readyResponse)

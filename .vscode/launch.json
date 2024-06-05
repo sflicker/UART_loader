@@ -10,7 +10,7 @@
       "mode": "auto",
       "program": "${workspaceFolder}/filereader.go",
       "env": {},
-      "args": ["../SAP-2_System/asm_test_files/test_jz_expect_12_v2.asm"]
+      "args": ["../SAP-2_System/asm_test_files/test_jz_expect_12.asm"]
     }
   ]
 }
